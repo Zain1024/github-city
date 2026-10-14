@@ -1,14 +1,10 @@
-import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const username = process.env.GITHUB_USERNAME;
 const token = process.env.GITHUB_TOKEN;
 
 const query = `
-{
-  user(login: "${username}") {
+query($login: String!) {
+  user(login: $login) {
     contributionsCollection {
       contributionCalendar {
         weeks {
@@ -25,23 +21,47 @@ const query = `
 `;
 
 async function fetchContributions() {
-    const response = await axios.post(
-        "https://api.github.com/graphql",
-        { query },
-        {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        }
+  if (!username || !token) {
+    throw new Error("GitHub username or token is missing.");
+  }
+
+  const response = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json"
+    },
+    body: JSON.stringify({
+      query,
+      variables: { login: username }
+    })
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `GitHub API request failed: HTTP ${response.status}`
     );
+  }
 
-    const userData = response.data.data.user;
+  if (result.errors?.length) {
+    throw new Error(
+      "GitHub GraphQL request failed: " +
+      result.errors.map(error => error.message).join("; ")
+    );
+  }
 
-    if (!userData) {
-        throw new Error(`\n Can't find "${username}". \nPlease check if GITHUB_USERNAME is correct and ensure it is a "personal account" rather than an "organization account".`);
-    }
+  const userData = result.data?.user;
 
-    return userData.contributionsCollection.contributionCalendar.weeks;
+  if (!userData) {
+    throw new Error(
+      `GitHub user "${username}" was not found.`
+    );
+  }
+
+  return userData.contributionsCollection.contributionCalendar.weeks;
 }
 
 export default fetchContributions;
